@@ -91,6 +91,23 @@ install.bat
 > 再从 `CABLE Output` 录回来识别，得到的就是翻译后的英文句子。
 > 复现命令：`.venv\Scripts\python.exe tools\vb_test.py`
 
+### 4. WhatsApp / 微信 / 其他通话软件
+
+**听对方说**（英→中）不用任何额外设置：对方的声音从扬声器/耳机放出来，
+程序抓 `[Loopback]` 就行，字幕和中文配音照常。
+
+**让对方听懂我**（中→英）要解决一个问题：这些软件能不能自己选麦克风。
+
+| 情况 | 做法 |
+| --- | --- |
+| 软件设置里能选麦克风 | 直接选 `CABLE Output (VB-Audio Virtual Cable)`，其余同上面的 Discord 表格 |
+| 不能选（只能跟系统默认） | 用 `tools\fix_default_audio.py --input "CABLE Output"` 把 Windows 默认录音改成虚拟声卡 |
+| 想只影响这一个软件 | 设置 → 系统 → 声音 → **高级声音选项** → 应用音量和设备首选项 → 选中该软件 → 输入选 `CABLE Output`、输出选你的耳机（不影响其他程序，推荐） |
+
+> ⚠️ 把系统默认录音改成 CABLE Output 后，LiveDub 的「采集 = 麦克风」要**显式选真实麦克风**
+> （例如 `麦克风 (USB Audio and HID)`），否则会抓到自己译文的回声。
+> 用完改回来：`tools\fix_default_audio.py --input 麦克风`
+
 ---
 
 ## 三、界面说明
@@ -187,6 +204,7 @@ LiveDub/
 | 译文被自己又翻译一遍 | 程序会在文本层做回声判定（同时间窗 + 文本相似度高就丢弃）；仍出现就把「译文播放」选到**耳机**，和采集的扬声器分开 |
 | 翻译报错 / 超时 | Bing 免费接口偶发限流，等几秒自动重试；或在设置里改用 DeepSeek（需填 API Key） |
 | 字幕没出现 | 全屏独占游戏不支持悬浮窗，改成无边框窗口；或按 `Ctrl+Alt+H` |
+| 对方说听不到我（WhatsApp/微信等） | 确认它用的麦克风是 `CABLE Output`；系统默认录音被改过的话，LiveDub 采集要显式选真实麦克风；再检查 Windows 设置 → 隐私 → 麦克风 是否允许该应用 |
 | 说话识别成乱码 / 一直出 `period` | 环境噪音过大，调低麦克风增益；程序已过滤静音处幻觉文本 |
 | 缺少模型提示 | 运行 `tools\download_models.py` |
 
