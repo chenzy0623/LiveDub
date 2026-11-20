@@ -259,11 +259,13 @@ class Channel:
             self._play_q.put_nowait(None)
         except Exception:
             pass
+        # 先让播放线程自己退出，再关流：播放线程若正卡在 stream.write 里，
+        # 从另一线程 close 会导致 Windows 下 access violation
+        for t in self._threads:
+            t.join(timeout=3.0)
+        self._threads.clear()
         if self._player:
             self._player.close()
-        for t in self._threads:
-            t.join(timeout=2.0)
-        self._threads.clear()
 
     # ---------------- 采集回调（采集线程） ----------------
     def _on_audio(self, audio: np.ndarray) -> None:
@@ -528,7 +530,15 @@ class DualPipeline:
 
         if cfg.outbound_enabled:
             mic = dv.resolve("input", cfg.mic_device)
-            vm = dv.resolve("output", cfg.virtual_mic_device)
+            vm_name = (cfg.virtual_mic_device or "").strip()
+            if not vm_name:
+                vms = dv.list_virtual_mics()
+                if not vms:
+                    raise RuntimeError(
+                        "「双向」模式需要一个虚拟声卡（推荐 VB-CABLE）。"
+                        "请先安装 VB-Audio Virtual Cable，或在设置里取消双向。")
+                vm_name = vms[0].name
+            vm = dv.resolve("output", vm_name)
             self.outbound = Channel("outbound", mic, "outbound", vm, self.service, self.events, cfg)
             self.outbound.start()
 

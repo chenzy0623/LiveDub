@@ -26,6 +26,8 @@ set "MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple"
 echo [2/3] 安装依赖（清华镜像，约 200MB）...
 "%PY%" -m pip install --upgrade pip -i %MIRROR%
 "%PY%" -m pip install -i %MIRROR% pyaudiowpatch onnxruntime requests numpy faster-whisper edge-tts miniaudio sherpa-onnx PySide6
+:: 可选：装完 VB-CABLE 后用它把系统默认播放设备改回扬声器（tools\fix_default_audio.py）
+"%PY%" -m pip install -i %MIRROR% comtypes pycaw
 if errorlevel 1 (
     echo.
     echo 依赖安装失败，请检查网络后重试。

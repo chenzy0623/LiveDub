@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
         rl.addWidget(self.live_tgt)
 
         self.history = QListWidget()
-        self.history.setMinimumHeight(68)
+        self.history.setMinimumHeight(64)
         self.history.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self.history.setSpacing(6)
         self.history.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
@@ -508,8 +508,8 @@ class MainWindow(QMainWindow):
     def _tab_about(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(2, 16, 8, 0)
-        lay.setSpacing(12)
+        lay.setContentsMargins(2, 12, 8, 0)
+        lay.setSpacing(9)
 
         step = ("<p style='margin:0 0 10px 0; line-height:165%'>"
                 "<span style='color:#6f8cff; font-weight:700;'>{n}.</span> "
@@ -590,6 +590,25 @@ class MainWindow(QMainWindow):
         try:
             for d in dv.list_outputs():
                 self.cmb_playback.addItem(d.name, d.name)
+            i = self.cmb_playback.findData(self.cfg.playback_device)
+            if i >= 0:
+                self.cmb_playback.setCurrentIndex(i)
+        except Exception:
+            pass
+
+        # 虚拟麦克风（VB-CABLE 等）
+        try:
+            prev = self.cmb_vmic.currentData() if self.cmb_vmic.count() else None
+            self.cmb_vmic.clear()
+            vms = dv.list_virtual_mics()
+            if not vms:
+                self.cmb_vmic.addItem("（未安装虚拟声卡）", "")
+            else:
+                for d in vms:
+                    self.cmb_vmic.addItem(d.name, d.name)
+                want = (self.cfg.virtual_mic_device or prev or "")
+                i = self.cmb_vmic.findData(want) if want else -1
+                self.cmb_vmic.setCurrentIndex(i if i >= 0 else 0)
         except Exception:
             pass
 
@@ -628,22 +647,10 @@ class MainWindow(QMainWindow):
         self.chk_partial.setChecked(c.partial_enabled)
         self.chk_keepvoice.setChecked(c.tts_pitch_follow)
         self.chk_outbound.setChecked(c.outbound_enabled)
-        # 虚拟麦克风
-        self.cmb_vmic.clear()
-        self.cmb_vmic.addItem("（未安装 / 不需要）", "")
-        try:
-            for d in dv.list_virtual_mics():
-                self.cmb_vmic.addItem(d.name, d.name)
-        except Exception:
-            pass
-        if not dv.has_vb_cable():
-            self.vmic_hint.setText(
-                "未检测到 VB-CABLE 虚拟声卡。要「把我说的话翻译给对方听」，"
-                "请安装 VB-Audio Virtual Cable（免费）后回来刷新。")
-        else:
-            self.vmic_hint.setText("已检测到虚拟声卡，可开启双向翻译。")
-        i = self.cmb_vmic.findData(c.virtual_mic_device)
-        self.cmb_vmic.setCurrentIndex(i if i >= 0 else 0)
+        # 虚拟麦克风：列表由 _refresh_devices() 填，这里只做选中
+        if self.cmb_vmic.count():
+            i = self.cmb_vmic.findData(c.virtual_mic_device) if c.virtual_mic_device else -1
+            self.cmb_vmic.setCurrentIndex(i if i >= 0 else 0)
         self._on_outbound_toggled(bool(c.outbound_enabled))
         # 播放设备
         i = self.cmb_playback.findData(c.playback_device)

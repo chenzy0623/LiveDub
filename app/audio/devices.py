@@ -47,6 +47,16 @@ def _host_name(pa: pyaudio.PyAudio, idx: int) -> str:
         return ""
 
 
+def _wasapi_only(items: list[Device]) -> list[Device]:
+    """同一个物理设备在 MME/DirectSound/WASAPI 下会出现多次。
+
+    我们只保留 WASAPI 端点（名字完整、48k、延迟低）；若系统没有 WASAPI
+    信息则原样返回。
+    """
+    wa = [d for d in items if "wasapi" in (d.host_api or "").lower()]
+    return wa or items
+
+
 def list_outputs() -> list[Device]:
     pa = get_pa()
     out: list[Device] = []
@@ -61,7 +71,7 @@ def list_outputs() -> list[Device]:
                 continue
             out.append(Device(i, name, "output", int(d["maxOutputChannels"]),
                               int(d.get("defaultSampleRate", 48000)), _host_name(pa, d.get("hostApi", -1))))
-    return out
+    return _wasapi_only(out)
 
 
 def list_inputs() -> list[Device]:
@@ -78,7 +88,7 @@ def list_inputs() -> list[Device]:
                 continue
             out.append(Device(i, name, "input", int(d["maxInputChannels"]),
                               int(d.get("defaultSampleRate", 48000)), _host_name(pa, d.get("hostApi", -1))))
-    return out
+    return _wasapi_only(out)
 
 
 def list_loopbacks() -> list[Device]:
@@ -93,7 +103,7 @@ def list_loopbacks() -> list[Device]:
                           int(d.get("maxInputChannels", 2)),
                           int(d.get("defaultSampleRate", 48000)),
                           _host_name(pa, d.get("hostApi", -1))))
-    return out
+    return _wasapi_only(out)
 
 
 def find_by_index(index: int) -> Optional[Device]:
@@ -155,6 +165,8 @@ def list_virtual_mics() -> list[Device]:
         n = d.name.lower()
         if any(k in n for k in keys):
             res.append(d)
+    # "CABLE Input" 是常用端点，"CABLE In 16ch" 排在后面
+    res.sort(key=lambda d: ("16ch" in d.name.lower(), 0 if "cable input" in d.name.lower() else 1))
     return res
 
 

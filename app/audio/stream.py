@@ -78,8 +78,13 @@ class CaptureStream:
         assert self._stream is not None
         while self._running:
             try:
-                data = self._stream.read(int(self._stream.get_read_available() or 1),
-                                         exception_on_overflow=False)
+                # 只读内核里已经就绪的帧：read() 一旦阻塞，stop() 里关流
+                # 有可能和阻塞中的 read 撞车（Windows 上会 access violation）
+                avail = int(self._stream.get_read_available() or 0)
+                if avail <= 0:
+                    time.sleep(0.004)
+                    continue
+                data = self._stream.read(avail, exception_on_overflow=False)
             except Exception as e:
                 self._error = f"读取音频失败：{e}"
                 break
@@ -101,7 +106,12 @@ class CaptureStream:
     def stop(self) -> None:
         self._running = False
         if self._thread is not None:
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=3.0)
+            if self._thread.is_alive():
+                # 采集线程卡在 read 里：宁可不关流，也不要在读取中关闭
+                self._error = "采集线程未能及时退出"
+                self._thread = None
+                return
             self._thread = None
         if self._stream is not None:
             try:
