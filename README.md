@@ -28,6 +28,17 @@
    - 用 hf-mirror 镜像下载模型（约 230 MB）
 3. 想「把自己说的话翻译给对方听」，再装一个免费虚拟声卡：[VB-Audio Virtual Cable](https://vb-audio.com/Cable/)（装完重启一次）。
 
+装好后：双击 **`start.bat`** 启动（无控制台窗口）。想要桌面图标，右键 `start.bat` → 发送到 → 桌面快捷方式即可；也可以直接把桌面快捷方式指向
+`.venv\Scripts\pythonw.exe`，参数填 `main.py`，图标用 `app\ui\assets\icon.ico`。
+
+也可以从 GitHub 克隆：
+
+```bat
+git clone https://github.com/chenzy0623/LiveDub.git
+cd LiveDub
+install.bat
+```
+
 > 手动安装（等价）：
 > ```
 > python -m venv .venv
