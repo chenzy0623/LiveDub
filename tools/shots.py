@@ -3,7 +3,8 @@
 用法:
     .venv/Scripts/python.exe tools/shots.py [outdir]
 
-默认输出到 shots_preview/，包含 main / main_outbound / settings / about / overlay。
+默认输出到 shots/（README 里的截图就来自这里），包含 main / main_empty / main_outbound /
+settings / about / overlay / overlay_tgt_only / main_min。
 依赖 QT_QPA_PLATFORM=offscreen，不需要声卡和模型。
 """
 from __future__ import annotations
@@ -104,7 +105,7 @@ def _shot(widget, path: Path) -> None:
 
 
 def main() -> int:
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "shots_preview"
+    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "shots"
     out.mkdir(parents=True, exist_ok=True)
 
     app = QApplication(sys.argv)

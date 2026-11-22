@@ -90,7 +90,7 @@ QLabel#tiny {{ color: {MUTED_2}; font-size: 11px; }}
 QLabel#kbd {{
     color: #cfd8ea; font-size: 11px; font-weight: 700;
     background: #1a2130; border: 1px solid #2b3547; border-radius: 6px;
-    padding: 3px 8px;
+    padding: 1px 7px;
 }}
 QLabel#mono {{ font-family: "Consolas", "Microsoft YaHei UI"; }}
 

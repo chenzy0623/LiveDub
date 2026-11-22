@@ -48,8 +48,8 @@ class SectionCard(QFrame):
         self.setAttribute(Qt.WA_StyledBackground, True)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 11, 16, 11)
-        outer.setSpacing(7)
+        outer.setContentsMargins(16, 10, 16, 9)
+        outer.setSpacing(6)
 
         self.head = QHBoxLayout()
         self.head.setContentsMargins(0, 0, 0, 0)

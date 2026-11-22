@@ -41,6 +41,8 @@ class Config:
     subtitle_enabled: bool = True
     subtitle_show_src: bool = True   # 字幕里是否带原文小字（只显示译文更清爽）
     overlay_pos: str = "bottom"      # 字幕位置：bottom / top / middle
+    overlay_x: int = -1              # 手动拖动后的坐标（-1 = 自动摆放）
+    overlay_y: int = -1
     voice_enabled: bool = True
     outbound_enabled: bool = False    # 需要虚拟麦克风
     partial_enabled: bool = True      # 说话过程中实时出字幕
@@ -83,16 +85,12 @@ class Config:
     clone_voice_id: str = ""
 
     # ---------------- 界面 ----------------
-    overlay_font_size: int = 30
     overlay_src_size: int = 15          # 原文小字字号
     overlay_tgt_size: int = 30          # 译文字号
     overlay_opacity: float = 0.88
-    overlay_width: int = 1100
-    overlay_y: int = 60
-    overlay_show_source: bool = True
-    overlay_theme: str = "dark"
     hotkey_toggle: str = "ctrl+alt+s"   # 开始/停止
-    hotkey_overlay: str = "ctrl+alt+h"  # 显示/隐藏字幕
+    hotkey_overlay: str = "ctrl+alt+h"   # 显示 / 隐藏字幕
+    hotkey_move: str = "ctrl+alt+m"      # 进入 / 退出「拖动字幕」模式
     close_to_tray: bool = True
 
     # ---------------- 其它 ----------------

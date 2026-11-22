@@ -82,7 +82,9 @@ class MainWindow(QMainWindow):
         self._timer.start()
 
         self.hotkeys = GlobalHotkeys(self.hotkey_q)
-        self.hotkeys.start({"toggle": cfg.hotkey_toggle, "overlay": cfg.hotkey_overlay})
+        self.hotkeys.start({"toggle": cfg.hotkey_toggle,
+                            "overlay": cfg.hotkey_overlay,
+                            "move": self._hotkey_move()})
 
         self._build_tray()
 
@@ -380,10 +382,12 @@ class MainWindow(QMainWindow):
         self.kbd_overlay = QLabel("Ctrl+Alt+H")
         keys = QWidget()
         kv = QVBoxLayout(keys)
-        kv.setContentsMargins(0, 2, 0, 2)
-        kv.setSpacing(7)
+        kv.setContentsMargins(0, 1, 0, 1)
+        kv.setSpacing(6)
+        self.kbd_move = QLabel("Ctrl+Alt+M")
         for kbd, cap_text in ((self.kbd_toggle, "开始 / 停止同传"),
-                              (self.kbd_overlay, "显示 / 隐藏字幕")):
+                              (self.kbd_overlay, "显示 / 隐藏字幕"),
+                              (self.kbd_move, "拖动字幕位置")):
             row = QWidget()
             kh = QHBoxLayout(row)
             kh.setContentsMargins(0, 0, 0, 0)
@@ -511,8 +515,51 @@ class MainWindow(QMainWindow):
         elif self.pipe is not None:
             self.overlay.show_message("字幕已打开", 1500)
 
+    def _hotkey_move(self) -> str:
+        return str(getattr(self.cfg, "hotkey_move", "ctrl+alt+m") or "ctrl+alt+m")
+
+    def _on_move_overlay(self) -> None:
+        """热键 / 托盘：进入或退出拖动模式。"""
+        self._set_move_mode(not self.overlay.drag_mode)
+
+    def _on_move_btn_toggled(self, on: bool) -> None:
+        if bool(on) != bool(self.overlay.drag_mode):
+            self._set_move_mode(bool(on))
+
+    def _set_move_mode(self, on: bool) -> None:
+        if on and not self.chk_subtitle.isChecked():
+            self._on_subtitle_toggled(True)     # 字幕关着就没得拖
+        self.overlay.set_drag_mode(on)
+        self.btn_move.blockSignals(True)
+        self.btn_move.setChecked(on)
+        self.btn_move.blockSignals(False)
+        if not on:
+            self._save_overlay_pos()
+
+    def _save_overlay_pos(self) -> None:
+        self.cfg.overlay_x = self.overlay.x()
+        self.cfg.overlay_y = self.overlay.y()
+        try:
+            self.cfg.save()
+        except Exception:
+            pass
+        self._set_stat("字幕位置已保存")
+
+    def _on_reset_overlay_pos(self) -> None:
+        if self.overlay.drag_mode:
+            self._set_move_mode(False)
+        self.overlay.reset_position()
+        try:
+            self.cfg.save()
+        except Exception:
+            pass
+        self.overlay.show_message("字幕已回到预设位置", 1500)
+
     def _on_overlay_pos_changed(self, _i: int = 0) -> None:
+        # 换预设位置 = 放弃手动坐标
         self.cfg.overlay_pos = self.cmb_pos.currentData() or "bottom"
+        self.cfg.overlay_x = -1
+        self.cfg.overlay_y = -1
         self.overlay.apply_config()
 
     def _on_show_src_toggled(self, on: bool) -> None:
@@ -610,6 +657,9 @@ class MainWindow(QMainWindow):
         g.body.addWidget(self._field("开始 / 停止", self.ed_hk1, width=86))
         self.ed_hk2 = QLineEdit()
         g.body.addWidget(self._field("显示 / 隐藏字幕", self.ed_hk2, width=86))
+        self.ed_hk3 = QLineEdit()
+        self.ed_hk3.setToolTip("进入拖动模式后，用鼠标把字幕拖到想要的位置")
+        g.body.addWidget(self._field("拖动字幕", self.ed_hk3, width=86))
         col_a.addWidget(g)
         col_a.addStretch(1)
 
@@ -667,10 +717,28 @@ class MainWindow(QMainWindow):
         self.chk_show_src.toggled.connect(self._on_show_src_toggled)
         g.body.addWidget(self.chk_show_src)
 
+        btns = QHBoxLayout()
+        btns.setSpacing(8)
+        self.btn_move = QPushButton("移动字幕")
+        self.btn_move.setObjectName("ghost")
+        self.btn_move.setCheckable(True)
+        self.btn_move.setToolTip("进入后可以用鼠标把字幕拖到任意位置；再按一次或 Ctrl+Alt+M 结束")
+        self.btn_move.toggled.connect(self._on_move_btn_toggled)
+        btns.addWidget(self.btn_move)
+        self.btn_reset = QPushButton("复位位置")
+        self.btn_reset.setObjectName("ghost")
+        self.btn_reset.setToolTip("清掉手动拖出来的位置，回到上面「位置」选的预设")
+        self.btn_reset.clicked.connect(self._on_reset_overlay_pos)
+        btns.addWidget(self.btn_reset)
+
         btn_prev = QPushButton("预览字幕")
         btn_prev.setObjectName("ghost")
         btn_prev.clicked.connect(self._preview_overlay)
-        g.body.addWidget(btn_prev, 0, Qt.AlignLeft)
+        btns.addWidget(btn_prev)
+        btns.addStretch(1)
+        row_btns = QWidget()
+        row_btns.setLayout(btns)
+        g.body.addWidget(row_btns)
         col_b.addWidget(g)
         col_b.addStretch(1)
 
@@ -750,7 +818,7 @@ class MainWindow(QMainWindow):
             "字幕延迟约 1～1.5 秒（识别 0.2s + 翻译 1s），配音随后跟上；"
             "底部指标条实时显示「识别 / 翻译 / 配音 / 字幕」四段耗时。"))
         tips.body.addWidget(self._bullet(
-            "快捷键：<b>Ctrl+Alt+S</b> 开始 / 停止，<b>Ctrl+Alt+H</b> 开关字幕。"))
+            "快捷键：<b>Ctrl+Alt+S</b> 开始 / 停止 · <b>Ctrl+Alt+H</b> 开关字幕 · <b>Ctrl+Alt+M</b> 拖动字幕（按住拖动，位置自动记住）。"))
         rl.addWidget(tips)
 
         voice = SectionCard("音色说明")
@@ -965,6 +1033,7 @@ class MainWindow(QMainWindow):
         self._sync_hotkeys()
         self.ed_hk1.setText(c.hotkey_toggle)
         self.ed_hk2.setText(c.hotkey_overlay)
+        self.ed_hk3.setText(getattr(c, "hotkey_move", "ctrl+alt+m"))
         i = self.cmb_rate.findData(c.tts_rate)
         self.cmb_rate.setCurrentIndex(i if i >= 0 else 2)
         self.cmb_voice_zh.addItem("自动（按说话人性别挑选）", "")
@@ -1000,6 +1069,7 @@ class MainWindow(QMainWindow):
         c.overlay_opacity = float(self.sp_opacity.value())
         c.hotkey_toggle = self.ed_hk1.text().strip() or "ctrl+alt+s"
         c.hotkey_overlay = self.ed_hk2.text().strip() or "ctrl+alt+h"
+        c.hotkey_move = self.ed_hk3.text().strip() or "ctrl+alt+m"
         c.tts_rate = self.cmb_rate.currentData() or "+0%"
         c.tts_voice_zh = self.cmb_voice_zh.currentData() or ""
         c.tts_voice_en = self.cmb_voice_en.currentData() or ""
@@ -1012,7 +1082,8 @@ class MainWindow(QMainWindow):
             self.hotkeys.stop()
             self.hotkeys = GlobalHotkeys(self.hotkey_q)
             self.hotkeys.start({"toggle": self.cfg.hotkey_toggle,
-                                "overlay": self.cfg.hotkey_overlay})
+                                "overlay": self.cfg.hotkey_overlay,
+                                "move": self._hotkey_move()})
         except Exception:
             pass
         self._sync_hotkeys()
@@ -1168,6 +1239,7 @@ class MainWindow(QMainWindow):
     def _sync_hotkeys(self) -> None:
         self.kbd_toggle.setText(self._pretty_hotkey(self.cfg.hotkey_toggle))
         self.kbd_overlay.setText(self._pretty_hotkey(self.cfg.hotkey_overlay))
+        self.kbd_move.setText(self._pretty_hotkey(self._hotkey_move()))
 
     def _set_badge(self, state: str, text: str) -> None:
         self.live_badge.setText(text)
@@ -1249,6 +1321,8 @@ class MainWindow(QMainWindow):
                 self._toggle_run()
             elif name == "overlay":
                 self._on_subtitle_toggled(not self.chk_subtitle.isChecked())
+            elif name == "move":
+                self._on_move_overlay()
 
     # ==================================================================
     def _build_tray(self) -> None:
