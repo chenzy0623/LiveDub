@@ -28,6 +28,13 @@
    - 用清华镜像装依赖（约 200 MB）
    - 用 hf-mirror 镜像下载模型（约 230 MB）
 3. 想「把自己说的话翻译给对方听」，再装一个免费虚拟声卡：[VB-Audio Virtual Cable](https://vb-audio.com/Cable/)（装完重启一次）。
+4. 想**完全离线**（断网也能用）？再下一套离线模型（约 570 MB）：
+
+   ```bat
+   .venv\Scripts\python.exe tools\download_offline_models.py
+   ```
+
+   然后在「设置 → 翻译引擎」勾上 **完全离线**：翻译走本地 opus-mt，配音走本地 Piper，全程不联网。
 
 > **装 VB-CABLE 的注意事项**：安装程序可能会把 Windows 的**默认播放设备**改成 `CABLE Input`，
 > 那样系统声音全都进了虚拟声卡，你会一点声音都听不到。装完后请检查右下角音量图标，
@@ -52,8 +59,9 @@ install.bat
 > 手动安装（等价）：
 > ```
 > python -m venv .venv
-> .venv\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pyaudiowpatch onnxruntime requests numpy faster-whisper edge-tts miniaudio sherpa-onnx PySide6
+> .venv\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pyaudiowpatch onnxruntime requests numpy faster-whisper edge-tts miniaudio sherpa-onnx PySide6 ctranslate2 sentencepiece comtypes pycaw
 > .venv\Scripts\python.exe tools\download_models.py
+> .venv\Scripts\python.exe tools\download_offline_models.py   （可选：离线翻译 + 离线配音）
 > ```
 
 ---
@@ -127,7 +135,32 @@ install.bat
 
 ---
 
-## 四、延迟与性能（本机实测：Xeon E5-2673 v3，纯 CPU）
+## 四、离线模式（断网也能用）
+
+设置页勾选 **完全离线** 即可，翻译与配音全部在本机完成，不需要任何网络：
+
+| 环节 | 在线（默认） | 离线（本地模型） |
+| --- | --- | --- |
+| 语音识别 | SenseVoiceSmall int8（本地） | 同左，本来就离线 |
+| 翻译 | Bing 免费 / DeepSeek API | **opus-mt** 中英双向（CTranslate2 int8，各 80 MB） |
+| 配音 | edge-tts 神经音色 | **Piper** 本地音色（中文女声 / 英文男女声，各 63 MB） |
+
+实测（同一台机器，断网、用 `HTTPS_PROXY` 指向死端口验证过）：
+
+| 环节 | 在线 | 离线 |
+| --- | --- | --- |
+| 翻译 | 0.8 – 1.2 s | **0.03 – 0.25 s** |
+| 配音 | 1.1 – 1.9 s | **0.2 – 0.8 s** |
+| 端到端 | 2.4 – 3.4 s | **1.1 – 2.4 s** |
+
+- 离线翻译质量：日常口语/对话够用（「你好，很高兴认识你」「我们已经在这个项目上做了三个月」这类），
+  长句、专业词、习语仍不如 Bing / DeepSeek，能联网时建议用在线引擎。
+- 离线配音是 Piper VITS，音色自然但比 edge-tts 略「机械」；女声/男声按说话人 F0 自动挑。
+- 离线模型与 piper.exe 都由 `tools/download_offline_models.py` 下载（国内走 hf-mirror 与 GitHub Release）。
+
+---
+
+## 五、延迟与性能（本机实测：Xeon E5-2673 v3，纯 CPU）
 
 | 环节 | 耗时 |
 | --- | --- |
@@ -142,7 +175,7 @@ install.bat
 
 ---
 
-## 五、音色是怎么「不变」的
+## 六、音色是怎么「不变」的
 
 本机没有 NVIDIA 显卡，跑不动 GPT-SoVITS / RVC 这类声音克隆模型，所以采用**音高 + 性别匹配**：
 
@@ -154,7 +187,7 @@ install.bat
 
 ---
 
-## 六、目录结构
+## 七、目录结构
 
 ```
 LiveDub/
@@ -180,7 +213,7 @@ LiveDub/
 └─ shots/                   界面截图
 ```
 
-## 七、自检与排错
+## 八、自检与排错
 
 ```bat
 :: 分项自检（设备、环回采集、VAD、识别、翻译、配音）
@@ -208,13 +241,13 @@ LiveDub/
 | 说话识别成乱码 / 一直出 `period` | 环境噪音过大，调低麦克风增益；程序已过滤静音处幻觉文本 |
 | 缺少模型提示 | 运行 `tools\download_models.py` |
 
-## 八、已知限制
+## 九、已知限制
 
 - 「说话中实时字幕」为预览性质，最终译文以整句结果为准。
 - 无 GPU 时不做本地声音克隆；离线翻译（NLLB）已留有接口但默认不启用，模型需自行下载。
 - 仅支持 Windows（依赖 WASAPI 环回采集）。
 
-## 九、开源协议
+## 十、开源协议
 
 MIT License · 欢迎 Issue / PR。
 

@@ -36,7 +36,11 @@ TARGET_LANGS = [x for x in LANGS if x[0] != "auto"]
 
 MT_ENGINES = [("bing", "Bing 免费（推荐，免 Key）"),
               ("deepseek", "DeepSeek API（质量最好，需 Key）"),
+              ("opus", "离线 · 本地 opus-mt（免网络，快）"),
               ("none", "不翻译（只显示原文）")]
+
+TTS_ENGINES = [("edge", "Edge 在线音色（最自然，需网络）"),
+               ("piper", "离线 · 本地 Piper（免网络，快）")]
 
 
 def hline() -> QFrame:
@@ -394,6 +398,15 @@ class MainWindow(QMainWindow):
         self.sp_ctx = QSpinBox()
         self.sp_ctx.setRange(0, 6)
         gl.addWidget(self.sp_ctx, 2, 1)
+        self.chk_offline = QCheckBox("完全离线（断网也能用）")
+        self.chk_offline.setToolTip("翻译走本地 opus-mt 模型，配音走本地 Piper 音色，"
+                                   "全程不联网。")
+        self.chk_offline.toggled.connect(self._on_offline_toggled)
+        gl.addWidget(self.chk_offline, 3, 0, 1, 3)
+        self.offline_hint = QLabel("")
+        self.offline_hint.setObjectName("stat")
+        self.offline_hint.setWordWrap(True)
+        gl.addWidget(self.offline_hint, 4, 0, 1, 3)
         gl.setColumnStretch(1, 1)
         lay.addWidget(g)
 
@@ -416,22 +429,27 @@ class MainWindow(QMainWindow):
         g = QGroupBox("配音（TTS）")
         gl = QGridLayout(g)
         gl.setVerticalSpacing(9)
-        gl.addWidget(self._cap("中文音色"), 0, 0)
+        gl.addWidget(self._cap("引擎"), 0, 0)
+        self.cmb_tts = QComboBox()
+        for v, t in TTS_ENGINES:
+            self.cmb_tts.addItem(t, v)
+        gl.addWidget(self.cmb_tts, 0, 1)
+        gl.addWidget(self._cap("中文音色"), 1, 0)
         self.cmb_voice_zh = QComboBox()
         self.cmb_voice_zh.setEditable(True)
-        gl.addWidget(self.cmb_voice_zh, 0, 1)
-        gl.addWidget(self._cap("英语音色"), 1, 0)
+        gl.addWidget(self.cmb_voice_zh, 1, 1)
+        gl.addWidget(self._cap("英语音色"), 2, 0)
         self.cmb_voice_en = QComboBox()
         self.cmb_voice_en.setEditable(True)
-        gl.addWidget(self.cmb_voice_en, 1, 1)
-        gl.addWidget(self._cap("语速"), 2, 0)
+        gl.addWidget(self.cmb_voice_en, 2, 1)
+        gl.addWidget(self._cap("语速"), 3, 0)
         self.cmb_rate = QComboBox()
         for v in ("-20%", "-10%", "+0%", "+10%", "+20%", "+30%"):
             self.cmb_rate.addItem(v, v)
-        gl.addWidget(self.cmb_rate, 2, 1)
+        gl.addWidget(self.cmb_rate, 3, 1)
         btn_voices = QPushButton("从网络刷新音色列表")
         btn_voices.clicked.connect(self._load_voices)
-        gl.addWidget(btn_voices, 3, 1)
+        gl.addWidget(btn_voices, 4, 1)
         gl.setColumnStretch(1, 1)
         lay.addWidget(g)
 
@@ -632,6 +650,47 @@ class MainWindow(QMainWindow):
             i = cmb.findData(cur)
             cmb.setCurrentIndex(i if i >= 0 else 0)
 
+    def _on_offline_toggled(self, on: bool) -> None:
+        """勾上「完全离线」→ 翻译切 opus、配音切 piper。"""
+        self.cfg.offline_only = bool(on)
+        if on:
+            i = self.cmb_mt.findData("opus")
+            if i >= 0:
+                self.cmb_mt.setCurrentIndex(i)
+            i = self.cmb_tts.findData("piper")
+            if i >= 0:
+                self.cmb_tts.setCurrentIndex(i)
+        self._update_offline_hint()
+
+    def _update_offline_hint(self) -> None:
+        from ..mt.translator import OpusMtTranslator
+        from ..tts.offline import PiperTTS
+        from ..config import MODELS_DIR
+
+        mt_ok, mt_msg = OpusMtTranslator(MODELS_DIR / "mt").available()
+        tts = PiperTTS(self.cfg.piper_dir or (MODELS_DIR / "tts"))
+        tts_ok, tts_msg = tts.available()
+        if self.chk_offline.isChecked():
+            if mt_ok and tts_ok:
+                self.offline_hint.setObjectName("ok")
+                self.offline_hint.setText("离线模型齐全：本地翻译 + 本地配音，断网可用。"
+                                          "（首次使用会加载约 1 秒）")
+            else:
+                self.offline_hint.setObjectName("warn")
+                miss = []
+                if not mt_ok:
+                    miss.append(f"翻译模型（{mt_msg}）")
+                if not tts_ok:
+                    miss.append(f"配音模型（{tts_msg}）")
+                self.offline_hint.setText("缺少离线" + "、".join(miss)
+                                          + "。点下方按钮下载。")
+        else:
+            self.offline_hint.setObjectName("stat")
+            self.offline_hint.setText("不勾选时用在线引擎（质量更好）。"
+                                      "勾选后完全断网也能翻译和配音。")
+        self.offline_hint.style().unpolish(self.offline_hint)
+        self.offline_hint.style().polish(self.offline_hint)
+
     def _load_settings_into_ui(self) -> None:
         c = self.cfg
         self.cmb_source.setCurrentIndex(0 if c.capture_source == "system" else 1)
@@ -658,6 +717,10 @@ class MainWindow(QMainWindow):
         # 设置页
         i = self.cmb_mt.findData(c.mt_engine)
         self.cmb_mt.setCurrentIndex(max(0, i))
+        i = self.cmb_tts.findData(c.tts_engine)
+        self.cmb_tts.setCurrentIndex(max(0, i))
+        self.chk_offline.setChecked(bool(getattr(c, "offline_only", False)))
+        self._update_offline_hint()
         self.ed_key.setText(c.deepseek_api_key)
         self.sp_ctx.setValue(int(getattr(c, "mt_context", 3) or 0))
         self.sp_threads.setValue(c.asr_threads or 4)
@@ -689,6 +752,8 @@ class MainWindow(QMainWindow):
         c.tts_pitch_follow = self.chk_keepvoice.isChecked()
         c.outbound_enabled = self.chk_outbound.isChecked()
         c.mt_engine = self.cmb_mt.currentData() or "bing"
+        c.tts_engine = self.cmb_tts.currentData() or "edge"
+        c.offline_only = self.chk_offline.isChecked()
         c.deepseek_api_key = self.ed_key.text().strip()
         c.mt_context = int(self.sp_ctx.value())
         c.asr_threads = self.sp_threads.value()

@@ -131,14 +131,34 @@ class Service:
     def tts(self):
         with self._lock:
             if self._tts is None:
-                from ..tts.engine import CloneTTS, EdgeTTS, pick_voice
-                if self.cfg.tts_engine == "clone" and self.cfg.clone_api_key:
+                from ..tts.engine import CloneTTS, EdgeTTS
+                eng = (self.cfg.tts_engine or "edge").lower()
+                if eng == "clone" and self.cfg.clone_api_key:
                     self._tts = CloneTTS(self.cfg.clone_base_url or "https://api.fish.audio/v1",
                                          self.cfg.clone_api_key,
                                          voice_id=self.cfg.clone_voice_id)
+                elif eng in ("piper", "local", "offline"):
+                    tts = self._build_piper()
+                    self._tts = tts if tts is not None else EdgeTTS(rate=self.cfg.tts_rate,
+                                                                   volume=self.cfg.tts_volume)
                 else:
                     self._tts = EdgeTTS(rate=self.cfg.tts_rate, volume=self.cfg.tts_volume)
             return self._tts
+
+    def _build_piper(self):
+        """离线配音：sherpa-onnx + VITS/Piper 模型（纯 CPU）。"""
+        try:
+            from ..tts.offline import PiperTTS
+            base = getattr(self.cfg, "piper_dir", "") or (MODELS_DIR / "tts")
+            tts = PiperTTS(base, threads=int(getattr(self.cfg, "piper_threads", 2) or 2),
+                           rate=self.cfg.tts_rate)
+            ok, msg = tts.available()
+            if ok:
+                return tts
+            self._tts_warning = msg
+        except Exception as e:
+            self._tts_warning = f"离线配音不可用：{e}"
+        return None
 
     def voices_for(self, lang: str):
         t = self.tts()
@@ -343,6 +363,9 @@ class Channel:
         # 1.5) 自播回声：这段音频与我们刚播的译文时间重叠、文字又高度相似 → 丢掉
         if self._is_self_echo(res.src_text, utt.t0, utt.t1):
             return None
+        # 刚播完 3 秒内，识别语言等于「译文的目标语言」→ 基本就是自己的译文被环回重采
+        if self._is_echo_lang(res.src_lang, tgt_lang, utt.t1):
+            return None
 
         # 2) 翻译（如果识别的语言已经是目标语言则跳过）
         detected = (res.src_lang or "").lower()
@@ -395,9 +418,16 @@ class Channel:
                 if base:
                     pitch_hz = max(-50, min(50, int(f0 - base)))
         from ..tts.engine import pick_voice
-        voice = cfg.tts_voice_zh if tgt_lang.startswith("zh") else cfg.tts_voice_en
-        if not voice:
-            voice = pick_voice(tgt_lang, gender)
+        if getattr(tts, "name", "") == "piper":
+            from ..tts.offline import VOICES as _LOCAL, pick_local_voice
+            voice = pick_local_voice(tgt_lang, gender)
+            base = _LOCAL.get(voice, ("", "", 0))[2]
+            if cfg.tts_pitch_follow and base and pitch_hz:
+                pass
+        else:
+            voice = cfg.tts_voice_zh if tgt_lang.startswith("zh") else cfg.tts_voice_en
+            if not voice:
+                voice = pick_voice(tgt_lang, gender)
         res.voice = voice
         if hasattr(tts, "synthesize"):
             try:
@@ -426,6 +456,15 @@ class Channel:
             return True
         import difflib
         return difflib.SequenceMatcher(None, a, b).ratio() > 0.62
+
+    def _is_echo_lang(self, detected: str, target: str, t_end: float) -> bool:
+        """刚播完不久、ASR 语言又正好是译文语言 → 判为自播回声。"""
+        _p0, p1, spoken = self._last_tts
+        if not spoken:
+            return False
+        if t_end - p1 > 3.0 or t_end < p1 - 1.0:
+            return False
+        return self._same_lang(detected, target)
 
     @staticmethod
     def _same_lang(detected: str, target: str) -> bool:

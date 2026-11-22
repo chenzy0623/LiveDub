@@ -55,14 +55,20 @@ class Config:
     asr_initial_prompt: str = ""
 
     # ---------------- 翻译 ----------------
-    mt_engine: str = "bing"           # bing / deepseek / nllb / none
+    mt_engine: str = "bing"           # bing / deepseek / opus / nllb / none / auto
+    offline_only: bool = False        # 完全离线：自动把在线引擎换成本地模型
+    mt_threads: int = 4               # 本地翻译模型线程数
+    opus_dir: str = ""                # 空 = models/mt（opus-mt 中英双向）
+    nllb_dir: str = ""                # 空 = models/mt/nllb-600m-int8
     deepseek_api_key: str = ""
     deepseek_base: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
     mt_extra_prompt: str = ""         # 术语表 / 风格提示
 
     # ---------------- TTS ----------------
-    tts_engine: str = "edge"          # edge / clone
+    tts_engine: str = "edge"          # edge / piper / clone
+    piper_dir: str = ""               # 空 = models/tts
+    piper_threads: int = 2            # 本地 VITS 合成线程数（0 = 自动）
     tts_voice_zh: str = ""            # 空 = 自动按性别挑选
     tts_voice_en: str = ""
     tts_rate: str = "+0%"             # edge-tts rate

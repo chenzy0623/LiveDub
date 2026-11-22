@@ -21,3 +21,8 @@ shots/desktop*.png
 build/
 dist/
 *.spec
+
+# 离线模型（体积大，用 tools/download_offline_models.py 获取）
+models/mt/
+models/tts/
+tools/piper/

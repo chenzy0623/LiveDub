@@ -54,7 +54,9 @@ def main() -> None:
     ap.add_argument("--source", default="auto")
     ap.add_argument("--mic", type=float, default=0, help="直接采集麦克风 N 秒（不播放文件）")
     ap.add_argument("--voice", action="store_true", help="开启配音")
-    ap.add_argument("--mt", default="bing", help="bing / deepseek / none")
+    ap.add_argument("--mt", default="bing", help="bing / deepseek / opus / none")
+    ap.add_argument("--tts", default="edge", help="edge / piper")
+    ap.add_argument("--offline", action="store_true", help="完全离线：翻译 opus + 配音 piper")
     ap.add_argument("--loopback", default="")
     args = ap.parse_args()
 
@@ -67,7 +69,9 @@ def main() -> None:
     cfg.target_lang = args.target
     cfg.source_lang = args.source
     cfg.voice_enabled = bool(args.voice)
-    cfg.mt_engine = args.mt
+    cfg.mt_engine = "opus" if args.offline else args.mt
+    cfg.tts_engine = "piper" if args.offline else args.tts
+    cfg.offline_only = bool(args.offline)
     cfg.partial_enabled = True
 
     ev = Events()
@@ -92,7 +96,8 @@ def main() -> None:
     ev.on_error = on_error
 
     pipe = DualPipeline(cfg, ev)
-    print(f"启动：采集={'麦克风' if args.mic else '系统声音'} 目标语言={args.target} MT={args.mt} 配音={args.voice}")
+    print(f"启动：采集={'麦克风' if args.mic else '系统声音'} 目标语言={args.target} "
+          f"MT={cfg.mt_engine} TTS={cfg.tts_engine} 配音={args.voice}")
 
     play_thread = None
     if args.mic:

@@ -203,12 +203,103 @@ NLLB_CODES = {"zh-Hans": "zho_Hans", "zh-Hant": "zho_Hant", "en": "eng_Latn", "j
               "th": "tha_Thai", "vi": "vie_Latn", "id": "ind_Latn", "tr": "tur_Latn"}
 
 
+_CJK = r"\u4e00-\u9fff"
+
+
+def _tidy_mt(text: str) -> str:
+    """整理译文：去掉中文之间的空格、补句末标点、压缩多余空白。"""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(rf"(?<=[{_CJK}]) (?=[{_CJK}])", "", s)
+    s = re.sub(rf"(?<=[{_CJK}]) (?=[，。！？；：、])", "", s)
+    s = re.sub(rf"(?<=[，。！？；：、]) (?=[{_CJK}])", "", s)
+    s = re.sub(r"\s+([,.!?;:])", r"\1", s)
+    return s.strip()
+
+
+class OpusMtTranslator(Translator):
+    """离线翻译：Helsinki opus-mt（CTranslate2 int8），英中双向各一个模型。
+
+    目录结构（models/mt/）：
+        opus-en-zh/{model.bin,source.spm,target.spm}
+        opus-zh-en/{model.bin,source.spm,target.spm}
+
+    纯 CPU、不依赖 torch；单句约 0.1–0.3 秒，内存约 150 MB。
+    """
+
+    name = "opus"
+
+    def __init__(self, base_dir: Path, threads: int = 4, beam_size: int = 4):
+        self.base = Path(base_dir)
+        self.threads = max(1, int(threads))
+        self.beam_size = max(1, int(beam_size))
+        self._eng: dict[str, tuple] = {}
+        self._lock = threading.Lock()
+
+    def available(self) -> tuple[bool, str]:
+        for sub in ("opus-en-zh", "opus-zh-en"):
+            if not (self.base / sub / "model.bin").exists():
+                return False, f"本地翻译模型不存在：{self.base / sub}"
+        return True, ""
+
+    def _dirs(self, src: str, tgt: str) -> str:
+        s, t = norm_lang(src), norm_lang(tgt)
+        if t.startswith("zh") and not s.startswith("zh"):
+            return "opus-en-zh"
+        if s.startswith("zh") and not t.startswith("zh"):
+            return "opus-zh-en"
+        # 其他语种先按 en→zh 兜底（opus-mt 只做中英）
+        return "opus-en-zh"
+
+    def _load(self, sub: str):
+        with self._lock:
+            if sub in self._eng:
+                return self._eng[sub]
+            import ctranslate2
+            import sentencepiece
+
+            d = self.base / sub
+            eng = ctranslate2.Translator(str(d), device="cpu", compute_type="int8",
+                                         intra_threads=self.threads, inter_threads=1)
+            src_sp = sentencepiece.SentencePieceProcessor(str(d / "source.spm"))
+            tgt_sp = sentencepiece.SentencePieceProcessor(str(d / "target.spm"))
+            self._eng[sub] = (eng, src_sp, tgt_sp)
+            return self._eng[sub]
+
+    def translate(self, text: str, src: str, tgt: str,
+                  context: Optional[list[str]] = None) -> str:
+        text = (text or "").strip()
+        if not text:
+            return ""
+        sub = self._dirs(src, tgt)
+        eng, src_sp, tgt_sp = self._load(sub)
+        # Marian 的编码器输入必须以 </s> 结尾（HF tokenizer 会自动加），
+        # 少了它模型会退化成逐词重复的乱码。
+        tokens = src_sp.encode(text, out_type=str) + ["</s>"]
+        res = eng.translate_batch([tokens], beam_size=self.beam_size,
+                                  max_batch_size=1, max_decoding_length=256)
+        out = res[0].hypotheses[0]
+        text_out = tgt_sp.decode([t for t in out if t not in ("</s>", "<pad>")]).strip()
+        return _tidy_mt(text_out)
+
+    def warmup(self) -> None:
+        try:
+            self.translate("Hello, nice to meet you.", "en", "zh-Hans")
+            self.translate("你好，很高兴认识你。", "zh", "en")
+        except Exception:
+            pass
+
+
 class NllbTranslator(Translator):
     name = "nllb"
 
-    def __init__(self, model_dir: Path):
+    def __init__(self, model_dir: Path, threads: int = 4):
         self.dir = Path(model_dir)
+        self.threads = max(1, int(threads))
         self._engine = None
+        self._sp = None
         self._lock = threading.Lock()
 
     def available(self) -> tuple[bool, str]:
@@ -222,7 +313,8 @@ class NllbTranslator(Translator):
                 return
             import ctranslate2
             self._engine = ctranslate2.Translator(str(self.dir), device="cpu",
-                                                  compute_type="int8", inter_threads=1, intra_threads=4)
+                                                  compute_type="int8", inter_threads=1,
+                                                  intra_threads=self.threads)
             import sentencepiece
             self._sp = sentencepiece.SentencePieceProcessor(str(self.dir / "sentencepiece.bpe.model"))
 
@@ -252,13 +344,25 @@ class Passthrough(Translator):
 # --------------------------------------------------------------------------
 def build_translator(cfg) -> Translator:
     eng = (cfg.mt_engine or "bing").lower()
+    if getattr(cfg, "offline_only", False) and eng not in ("none", "opus", "opus-mt", "local", "nllb"):
+        # 离线模式：优先用质量更好的本地模型，没有就退回 opus-mt 极速版
+        nllb_dir = Path(getattr(cfg, "nllb_dir", "") or
+                        (Path(__file__).resolve().parent.parent.parent / "models" / "mt" /
+                         "nllb-600m-int8"))
+        eng = "nllb" if (nllb_dir / "model.bin").exists() else "opus"
     if eng == "deepseek":
         return DeepSeekTranslator(cfg.deepseek_base, cfg.deepseek_api_key, cfg.deepseek_model)
     if eng == "openai":
         return LLMTranslator(cfg.deepseek_base, cfg.deepseek_api_key, cfg.deepseek_model)
+    if eng in ("opus", "opus-mt", "local"):
+        base = Path(getattr(cfg, "opus_dir", "") or (Path(__file__).resolve().parent.parent.parent
+                                                    / "models" / "mt"))
+        return OpusMtTranslator(base, threads=getattr(cfg, "mt_threads", 4))
     if eng == "nllb":
-        return NllbTranslator(Path(cfg.nllb_dir) if getattr(cfg, "nllb_dir", "") else
-                              Path(__file__).resolve().parent.parent.parent / "models" / "nllb-200-distilled-600M-ct2")
+        d = getattr(cfg, "nllb_dir", "")
+        base = Path(d) if d else (Path(__file__).resolve().parent.parent.parent
+                                  / "models" / "mt" / "nllb-600m-int8")
+        return NllbTranslator(base, threads=getattr(cfg, "mt_threads", 4))
     if eng == "none":
         return Passthrough()
     return BingTranslator()
