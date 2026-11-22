@@ -363,8 +363,8 @@ class Channel:
         # 1.5) 自播回声：这段音频与我们刚播的译文时间重叠、文字又高度相似 → 丢掉
         if self._is_self_echo(res.src_text, utt.t0, utt.t1):
             return None
-        # 刚播完 3 秒内，识别语言等于「译文的目标语言」→ 基本就是自己的译文被环回重采
-        if self._is_echo_lang(res.src_lang, tgt_lang, utt.t1):
+        # 刚播完不久、识别结果又是译文语言 → 基本就是自己的译文被环回重采
+        if self._is_echo_lang(res.src_text, res.src_lang, tgt_lang, utt.t0, utt.t1):
             return None
 
         # 2) 翻译（如果识别的语言已经是目标语言则跳过）
@@ -388,6 +388,11 @@ class Channel:
             self._history.append(res.src_text)
             if len(self._history) > 12:
                 del self._history[:-12]
+
+        # 2.5) 字幕先出：译文一好就推给界面，配音（1–3 秒）在后台继续
+        if res.tgt_text:
+            self._last_partial = (res.src_text, res.tgt_text)
+            self.events.on_partial(res.src_text, res.tgt_text, self.direction)
 
         # 3) 配音
         if cfg.voice_enabled and res.tgt_text and self.play_dev is not None:
@@ -457,14 +462,37 @@ class Channel:
         import difflib
         return difflib.SequenceMatcher(None, a, b).ratio() > 0.62
 
-    def _is_echo_lang(self, detected: str, target: str, t_end: float) -> bool:
-        """刚播完不久、ASR 语言又正好是译文语言 → 判为自播回声。"""
-        _p0, p1, spoken = self._last_tts
+    def _is_echo_lang(self, text: str, detected: str, target: str,
+                      t0: float, t1: float) -> bool:
+        """这一段音频是不是我们自己刚播的译文被环回重采。
+
+        判据：①音频窗口与「刚播过的译文」有重叠或紧随其后；
+        ②识别语言/文字脚本正好是译文语言（ASR 小片段常给空语言，用脚本兜底）。
+        """
+        p0, p1, spoken = self._last_tts
         if not spoken:
             return False
-        if t_end - p1 > 3.0 or t_end < p1 - 1.0:
+        if t0 > p1 + 2.5 or t1 < p0 - 0.8:
             return False
-        return self._same_lang(detected, target)
+        if self._same_lang(detected, target):
+            return True
+        return self._script_is(text, target)
+
+    @staticmethod
+    def _script_is(text: str, lang: str) -> bool:
+        """粗略判断一段文字是不是某种语言的字面脚本。"""
+        t = (text or "").strip()
+        if len(t) < 4:
+            return False
+        cjk = sum(1 for ch in t if "\u4e00" <= ch <= "\u9fff")
+        latin = sum(1 for ch in t if ch.isascii() and ch.isalpha())
+        letters = cjk + latin
+        if letters == 0:
+            return False
+        lg = (lang or "").lower()
+        if lg.startswith("zh"):
+            return cjk / letters > 0.4
+        return latin / letters > 0.7 and cjk == 0
 
     @staticmethod
     def _same_lang(detected: str, target: str) -> bool:
@@ -524,11 +552,14 @@ class Channel:
             text = (ar.text or "").strip()
             if not text or text == self._last_partial[0]:
                 continue
+            src_lang = self.cfg.source_lang if self.direction == "inbound" else self.cfg.outbound_source_lang
+            tgt_lang = self.cfg.target_lang if self.direction == "inbound" else self.cfg.outbound_target_lang
             # 实时字幕同样过滤自播回声（否则会看到自己译文的回读）
             if self._is_self_echo(text, now - len(audio) / 16000.0, now):
                 continue
-            src_lang = self.cfg.source_lang if self.direction == "inbound" else self.cfg.outbound_source_lang
-            tgt_lang = self.cfg.target_lang if self.direction == "inbound" else self.cfg.outbound_target_lang
+            if self._is_echo_lang(text, ar.lang or src_lang, tgt_lang,
+                                 now - len(audio) / 16000.0, now):
+                continue
             tgt = self._last_partial[1]
             need = (not self._same_lang(ar.lang or src_lang, tgt_lang))
             if need and now - self._last_partial_mt >= 1.4 and len(text) > 6:

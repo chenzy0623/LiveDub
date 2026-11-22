@@ -39,6 +39,8 @@ class Config:
 
     # ---------------- 开关 ----------------
     subtitle_enabled: bool = True
+    subtitle_show_src: bool = True   # 字幕里是否带原文小字（只显示译文更清爽）
+    overlay_pos: str = "bottom"      # 字幕位置：bottom / top / middle
     voice_enabled: bool = True
     outbound_enabled: bool = False    # 需要虚拟麦克风
     partial_enabled: bool = True      # 说话过程中实时出字幕

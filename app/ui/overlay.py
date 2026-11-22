@@ -13,6 +13,8 @@ from PySide6.QtGui import QFont, QColor, QGuiApplication
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QFrame, QGraphicsDropShadowEffect)
 
+from .style import SUCCESS, INFO, WARN, TEXT
+
 LANG_ABBR = {"en": "EN", "zh": "中文", "ja": "日本語", "ko": "한국어",
              "ru": "RU", "fr": "FR", "de": "DE", "es": "ES", "pt": "PT",
              "it": "IT", "ar": "AR", "th": "TH", "vi": "VI", "id": "ID"}
@@ -48,16 +50,16 @@ class SubtitleOverlay(QWidget):
         self.card.setGraphicsEffect(shadow)
 
         lay = QVBoxLayout(self.card)
-        lay.setContentsMargins(22, 13, 22, 16)
-        lay.setSpacing(7)
+        lay.setContentsMargins(24, 13, 24, 17)
+        lay.setSpacing(6)
 
         # 顶部：方向徽章 + 语种
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(8)
-        self.badge = QLabel("●  对方")
+        self.badge = QLabel("对方")
         self.badge.setObjectName("badge")
-        self.badge.setStyleSheet(self._badge_qss("#6fd6a5"))
+        self.badge.setStyleSheet(self._badge_qss(SUCCESS))
         self.lang_lbl = QLabel("")
         self.lang_lbl.setObjectName("lang")
         top.addWidget(self.badge)
@@ -92,9 +94,14 @@ class SubtitleOverlay(QWidget):
     # ------------------------------------------------------------------
     @staticmethod
     def _badge_qss(color: str) -> str:
-        return (f"color:{color}; background:rgba(255,255,255,0.055);"
-                "border:1px solid rgba(255,255,255,0.10); border-radius:9px;"
-                "padding:2px 9px; font-size:11px; font-weight:700;"
+        """方向徽章：半透明同色底 + 同色描边 + 左侧圆点。"""
+        return (f"color:{color};"
+                f"background:rgba({int(color[1:3], 16)},{int(color[3:5], 16)},"
+                f"{int(color[5:7], 16)},0.13);"
+                f"border:1px solid rgba({int(color[1:3], 16)},{int(color[3:5], 16)},"
+                f"{int(color[5:7], 16)},0.34);"
+                "border-radius:10px; padding:2px 10px;"
+                "font-size:11px; font-weight:700;"
                 "font-family:'Microsoft YaHei UI';")
 
     def _apply_style(self) -> None:
@@ -103,26 +110,26 @@ class SubtitleOverlay(QWidget):
         fs_tgt = max(14, int(c.overlay_tgt_size))
         op = float(c.overlay_opacity)
         bg = int(216 * op)
-        accent = "#6fd6a5" if self._dir == "inbound" else "#66b3ff"
+        accent = SUCCESS if self._dir == "inbound" else INFO
         self.setStyleSheet(f"""
             QFrame#card {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                            stop:0 rgba(18,21,29,{bg}),
-                            stop:1 rgba(11,13,19,{int(bg * 0.96)}));
-                border: 1px solid rgba(120,150,255,0.18);
-                border-left: 3px solid {accent};
-                border-radius: 16px;
+                            stop:0 rgba(19,23,32,{bg}),
+                            stop:1 rgba(9,11,16,{int(bg * 0.97)}));
+                border: 1px solid rgba(126,146,190,0.16);
+                border-left: 4px solid {accent};
+                border-radius: 14px;
             }}
             QLabel {{ background: transparent; }}
-            QLabel#lang {{ color: rgba(255,255,255,0.30); font-size: 11px;
-                font-family: "Consolas"; }}
+            QLabel#lang {{ color: rgba(233,237,246,0.44); font-size: 10px;
+                letter-spacing: 1px; font-family: "Consolas", "Cascadia Mono"; }}
             QLabel#src {{
-                color: rgba(196,206,226,0.72);
+                color: rgba(196,206,226,0.66);
                 font-size: {fs_src}px;
                 font-family: "Microsoft YaHei UI", "Segoe UI";
             }}
             QLabel#tgt {{
-                color: #ffffff; font-size: {fs_tgt}px; font-weight: 600;
+                color: {TEXT}; font-size: {fs_tgt}px; font-weight: 600;
                 font-family: "Microsoft YaHei UI", "Segoe UI";
             }}
         """)
@@ -132,7 +139,13 @@ class SubtitleOverlay(QWidget):
 
     def apply_config(self) -> None:
         self._apply_style()
+        self._sync_src()
         self._reposition()
+
+    def _sync_src(self) -> None:
+        """只显示译文时把原文行收起来（FPS 用更清爽）。"""
+        show = bool(getattr(self.cfg, "subtitle_show_src", True))
+        self.src_lbl.setVisible(show and bool(self.src_lbl.text()))
 
     # ------------------------------------------------------------------
     def _reposition(self) -> None:
@@ -145,7 +158,13 @@ class SubtitleOverlay(QWidget):
         self.setMaximumWidth(w)
         self.adjustSize()
         x = g.x() + (g.width() - self.width()) // 2
-        y = g.y() + g.height() - self.height() - int(g.height() * 0.09)
+        pos = str(getattr(self.cfg, "overlay_pos", "bottom") or "bottom").lower()
+        if pos == "top":
+            y = g.y() + int(g.height() * 0.06)
+        elif pos == "middle":
+            y = g.y() + (g.height() - self.height()) // 2
+        else:
+            y = g.y() + g.height() - self.height() - int(g.height() * 0.09)
         self.move(max(g.x(), x), max(g.y(), y))
 
     def set_direction(self, direction: str) -> None:
@@ -153,11 +172,11 @@ class SubtitleOverlay(QWidget):
             return
         self._dir = direction
         if direction == "outbound":
-            self.badge.setText("●  我说")
-            self.badge.setStyleSheet(self._badge_qss("#66b3ff"))
+            self.badge.setText("我说")
+            self.badge.setStyleSheet(self._badge_qss(INFO))
         else:
-            self.badge.setText("●  对方")
-            self.badge.setStyleSheet(self._badge_qss("#6fd6a5"))
+            self.badge.setText("对方")
+            self.badge.setStyleSheet(self._badge_qss(SUCCESS))
         self._apply_style()
 
     def _langs(self) -> None:
@@ -170,8 +189,9 @@ class SubtitleOverlay(QWidget):
         self._langs()
         self.src_lbl.setText(src)
         self.tgt_lbl.setText(tgt or "")
+        self._sync_src()
         self.tgt_lbl.setStyleSheet(
-            "color: rgba(255,255,255,0.62); font-size:%dpx; font-weight:600;"
+            "color: rgba(233,237,246,0.60); font-size:%dpx; font-weight:600;"
             "font-family:'Microsoft YaHei UI','Segoe UI';"
             % int(self.cfg.overlay_tgt_size))
         self._show_and_touch(8000)
@@ -183,14 +203,15 @@ class SubtitleOverlay(QWidget):
         self.src_lbl.setText(src)
         self.tgt_lbl.setText(tgt or src)
         self.tgt_lbl.setStyleSheet(
-            "color:#ffffff; font-size:%dpx; font-weight:600;"
+            f"color:{TEXT}; font-size:%dpx; font-weight:600;"
             "font-family:'Microsoft YaHei UI','Segoe UI';"
             % int(self.cfg.overlay_tgt_size))
+        self._sync_src()
         self._show_and_touch(keep_ms)
 
     def show_message(self, text: str, keep_ms: int = 2500) -> None:
-        self.badge.setText("●  提示")
-        self.badge.setStyleSheet(self._badge_qss("#c8b06a"))
+        self.badge.setText("提示")
+        self.badge.setStyleSheet(self._badge_qss(WARN))
         self.src_lbl.setText("")
         self.tgt_lbl.setText(text)
         self._show_and_touch(keep_ms)
