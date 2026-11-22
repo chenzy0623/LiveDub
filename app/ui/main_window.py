@@ -1179,7 +1179,7 @@ class MainWindow(QMainWindow):
 
     def _reset_chips(self) -> None:
         for c, n in ((self.chip_asr, "识别"), (self.chip_mt, "翻译"),
-                     (self.chip_tts, "配音"), (self.chip_e2e, "端到端")):
+                     (self.chip_tts, "配音"), (self.chip_e2e, "字幕")):
             c.setText(f"{n} —")
             c.setProperty("hot", "false")
             c.style().unpolish(c)

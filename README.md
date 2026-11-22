@@ -11,12 +11,27 @@
 - 识别：SenseVoiceSmall int8（ONNX / CPU，中英日韩粤，约 10 倍实时）
 - 翻译：Bing 免费翻译（免 Key）/ DeepSeek API（质量更好，可填 Key）
 - 配音：edge-tts 在线神经网络语音，**按原说话人性别与音高自动选音色**
-- 界面：PySide6 深色 GUI + 置顶半透明字幕悬浮窗（鼠标可穿透）
+- 界面：PySide6 深色 GUI + 置顶半透明字幕悬浮窗（鼠标可穿透），字幕可一键开关、可放屏幕顶部（FPS 不挡准星）
+- 离线可选：本地 opus-mt 翻译 + 本地 Piper 配音，断网也能用（见第四节）
 - 纯 CPU 可跑：AMD / Intel 核显机器也行，不需要 NVIDIA 显卡
 
-![主界面](shots/main.png)
-![双向模式（虚拟声卡）](shots/main_outbound.png)
-![字幕悬浮窗](shots/overlay.png)
+| 主界面（待机） | 双向模式（虚拟声卡） |
+| --- | --- |
+| ![主界面](shots/main.png) | ![双向模式](shots/main_outbound.png) |
+
+| 设置页 | 使用说明 |
+| --- | --- |
+| ![设置页](shots/settings.png) | ![使用说明](shots/about.png) |
+
+| 字幕悬浮窗（原文 + 译文） | 只显示译文（FPS 推荐） |
+| --- | --- |
+| ![字幕](shots/overlay.png) | ![只显示译文](shots/overlay_tgt_only.png) |
+
+![实际桌面 1366×768](shots/desktop_app.png)
+
+> 界面是两栏工作台：左栏调采集设备、语言方向、功能开关与快捷键，右栏是实时字幕和
+> 带方向的对话历史（绿色「对方」/ 蓝色「我说」）。空状态、卡片分组、底部指标条
+> （识别 / 翻译 / 配音 / 字幕 四段耗时）都随运行状态变化。
 
 ---
 
@@ -135,12 +150,22 @@ install.bat
 | 声音来源 | 采集源（系统声音 / 麦克风）、设备、译文播放设备（只列 WASAPI 端点，避免同一设备重复出现） |
 | 语言方向 | 源语言（自动检测 / 中 / 英 / 日 / 韩 / 粤）、目标语言，中间 `⇄` 可交换 |
 | 功能 | 显示字幕、译文配音、说话中实时字幕（边听边出字）、跟随原说话人音高、双向（需虚拟声卡） |
-| 实时 | 电平表、当前句原文与译文、历史记录（方向色条：绿=对方，蓝=我说） |
+| 实时 | 电平表、当前句原文与译文、右上角方向胶囊（对方 / 我说 / 待机） |
+| 历史记录 | 按对话顺序列出每一句（方向色条：绿=对方，蓝=我说），右上角有计数与「清空」 |
+| 空状态 | 还没开始时有声波插画和操作引导，不会是一块空黑板 |
 | 底部指标 | 识别 / 翻译 / 配音 / **字幕**耗时（字幕延迟 < 2 秒会变绿） |
 
-**设置页**：翻译引擎（Bing / DeepSeek + API Key）、上文参考条数、语音识别模型与线程数、配音音色与语速、字幕字号与不透明度、快捷键。
+**设置页**（两列 + 底部固定保存条）：
 
-**快捷键**：`Ctrl+Alt+S` 开始/停止，`Ctrl+Alt+H` 开关字幕。关闭窗口默认最小化到托盘（可在设置里改）。
+- 翻译引擎：Bing 免费 / DeepSeek（填 Key）/ 离线 opus-mt，另有「完全离线」总开关
+- 语音识别：模型与线程数（CPU 推理，无需显卡）
+- 配音：引擎（Edge 在线 / Piper 离线）、中英文音色、语速
+- 字幕样式：**位置**（底部 / 顶部 / 屏幕中间）、译文字号、原文字号、不透明度、
+  **字幕里带原文小字**（关掉只剩一行译文，最清爽）、「预览字幕」
+- 快捷键：开始/停止、显示/隐藏字幕
+
+**快捷键**：`Ctrl+Alt+S` 开始/停止，`Ctrl+Alt+H` 开关字幕（全局生效，游戏里也能用）。
+关闭窗口默认最小化到托盘，右键托盘图标可以退出（可在设置里改）。
 
 ---
 
@@ -209,21 +234,23 @@ LiveDub/
 │  ├─ config.py             配置（%APPDATA%\LiveDub\config.json）
 │  ├─ audio/                设备枚举、WASAPI 采集/播放、重采样、音高
 │  ├─ asr/                  SenseVoice（默认）/ faster-whisper
-│  ├─ mt/                    Bing 免费 / DeepSeek / NLLB 离线 / 直通
-│  ├─ tts/                   edge-tts 音色选择与合成
+│  ├─ mt/                   Bing 免费 / DeepSeek / 离线 opus-mt
+│  ├─ tts/                  edge-tts 在线音色 + 离线 Piper
 │  ├─ pipeline/engine.py    采集→VAD→识别→翻译→配音→播放 主流程
 │  └─ ui/                   主窗口、字幕悬浮窗、主题、全局热键、图标
-├─ models/                  sensevoice/ 与 silero_vad.onnx
+├─ models/                  sensevoice/、silero_vad.onnx（离线时还有 mt/、tts/）
 ├─ tools/
-│  ├─ download_models.py    模型下载（hf-mirror）
-│  ├─ run_cli.py            无界面测试（播放样本 → 打印字幕与延迟）
-│  ├─ gui_smoke.py          GUI 冒烟（启动真实管线 → 播放样本 → 截图）
-│  ├─ shots.py              offscreen 出一套界面截图（shots_preview/）
-│  ├─ smoke.py              分项自检（设备 / 环回 / VAD / ASR / TTS / MT）
-│  ├─ bench_asr.py          识别速度基准
-│  ├─ vb_test.py            VB-CABLE 出站链路自测（中→英→虚拟麦克风）
-│  ├─ fix_default_audio.py  把 Windows 默认播放设备改回扬声器
-│  └─ make_icon.py          生成应用图标
+│  ├─ download_models.py        基础模型下载（hf-mirror，约 230 MB）
+│  ├─ download_offline_models.py 离线模型 + piper 下载（约 570 MB）
+│  ├─ run_cli.py                无界面测试（播放样本 → 打印字幕与延迟）
+│  ├─ gui_smoke.py              真实管线 GUI 冒烟（启动/出字/截图/停止）
+│  ├─ shots.py                  离屏渲染界面截图 + 滚动条度量
+│  ├─ smoke.py                  分项自检（设备 / 环回 / VAD / ASR / TTS / MT）
+│  ├─ vb_test.py                VB-CABLE 出站链路自测（中→英→虚拟麦克风）
+│  ├─ fix_default_audio.py      切换 Windows 默认播放 / 录音设备
+│  ├─ push_via_api.py           github.com 被墙时用 API 推送
+│  ├─ bench_asr.py              识别速度基准
+│  └─ make_icon.py              生成应用图标
 └─ shots/                   界面截图
 ```
 
@@ -258,7 +285,8 @@ LiveDub/
 ## 九、已知限制
 
 - 「说话中实时字幕」为预览性质，最终译文以整句结果为准。
-- 无 GPU 时不做本地声音克隆；离线翻译（NLLB）已留有接口但默认不启用，模型需自行下载。
+- 无 GPU 时不做本地声音克隆（离线配音用固定音色 + 音高微调）；真·1:1 克隆需接云服务。
+- 离线翻译用的是 opus-mt 小模型（每方向约 80 MB），质量低于在线引擎，适合网络不佳时兜底。
 - 仅支持 Windows（依赖 WASAPI 环回采集）。
 
 ## 十、开源协议
@@ -266,8 +294,23 @@ LiveDub/
 MIT License · 欢迎 Issue / PR。
 
 - 语音识别：[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) + [SenseVoice](https://github.com/FunAudioLLM/SenseVoice)
-- 语音合成：Microsoft edge-tts（在线，免费）
-- 翻译：可选 Bing 免费接口 / DeepSeek API / NLLB 离线
+- 语音合成：[edge-tts](https://github.com/rany2/edge-tts)（在线，免费）/ [Piper](https://github.com/rhasspy/piper)（离线）
+- 翻译：可选 Bing 免费接口 / DeepSeek API / [opus-mt](https://huggingface.co/Helsinki-NLP)（离线，CTranslate2 推理）
 - 虚拟声卡：[VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 
 > 本项目仅用于个人学习与跨语言交流辅助，请遵守各平台服务条款。
+
+---
+
+## 十一、更新日志
+
+- **v1.2**（当前）
+  - 界面重做：两栏工作台、卡片分组、空状态插画、带方向的对话历史（绿=对方 / 蓝=我说）、
+    底部指标条改为「识别 / 翻译 / 配音 / **字幕**」（字幕延迟 < 2 秒变绿）
+  - 字幕先出、配音后跟：译文一好就上屏，配音在后台继续（字幕延迟约 1.0–1.5 秒）
+  - 字幕一键开关：右上「字幕 开/关」按钮或全局热键 `Ctrl+Alt+H`（运行中也能开关）
+  - FPS 友好：字幕位置可选**顶部**，可只显示译文（关掉原文小字）
+  - 完全离线模式：本地 opus-mt 翻译 + 本地 Piper 配音，断网可用
+  - 回声判定重写：按时间窗 + 语种 + 文本脚本三重判断，不再把自己播的配音当成对方说话
+  - 设备列表只显示 WASAPI 端点；修复停止时偶发崩溃（0xC0000005）
+- **v1.0**：首个版本（SenseVoice 识别 + Bing/DeepSeek 翻译 + edge-tts 音色贴近 + VB-CABLE 双向）

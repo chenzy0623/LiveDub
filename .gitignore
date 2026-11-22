@@ -17,7 +17,7 @@ config.json
 # 生成物
 shots/live*.png
 shots/*.npy
-shots/desktop*.png
+shots/desktop.png
 build/
 dist/
 *.spec
