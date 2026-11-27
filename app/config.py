@@ -46,7 +46,8 @@ class Config:
     voice_enabled: bool = True
     outbound_enabled: bool = False    # 需要虚拟麦克风
     partial_enabled: bool = True      # 说话过程中实时出字幕
-    keep_voice: bool = True           # 音色保持（匹配/克隆）
+    keep_voice: bool = True
+    voice_match: float = 0.7        # 音色还原强度 0~1（离线下把配音往原声靠，信号层近似）           # 音色保持（匹配/克隆）
     duck_original: bool = False       # 播放译文时压低原声（需虚拟声卡，暂未实现）
     duck_on_play: bool = True         # 播放译文时屏蔽环回采集，避免自我循环
     mt_context: int = 3               # 送给翻译模型的上文句子数（0 = 不用上下文）

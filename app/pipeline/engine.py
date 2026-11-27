@@ -24,6 +24,7 @@ import numpy as np
 
 from ..audio import devices as dv
 from ..audio.pitch import estimate_f0, gender_of
+from ..audio.timbre import TimbreTracker, match as match_timbre
 from ..audio.stream import CaptureStream, PlaybackStream
 from ..config import MODELS_DIR, Config
 from ..segmenter import Segmenter
@@ -233,6 +234,7 @@ class Channel:
         self._self_speaking = threading.Event()
         self._duck_until = 0.0
         self._last_tts: tuple[float, float, str] = (0.0, 0.0, "")  # 自播音时间窗 + 文本
+        self._timbre = TimbreTracker()                            # 原说话人音色（跨句平滑）
         self.segments_done = 0
         self.last_error = ""
 
@@ -412,34 +414,46 @@ class Channel:
         cfg = self.cfg
         tts = self.service.tts()
         gender = "female"
-        pitch_hz = 0
+        src_f0 = 0.0
         if cfg.keep_voice:
-            f0 = estimate_f0(src_audio, 16000)
-            gender = gender_of(f0)
-            if cfg.tts_pitch_follow and f0 > 0:
-                from ..tts.engine import VOICE_BASE_F0, pick_voice
-                voice_try = pick_voice(tgt_lang, gender)
-                base = VOICE_BASE_F0.get(voice_try, 0)
-                if base:
-                    pitch_hz = max(-50, min(50, int(f0 - base)))
-        from ..tts.engine import pick_voice
+            src_f0 = estimate_f0(src_audio, 16000)
+            gender = gender_of(src_f0)
+
+        # 选音色：离线 piper 用本地音色表（自带基准 f0），在线 edge 用音色表
         if getattr(tts, "name", "") == "piper":
             from ..tts.offline import VOICES as _LOCAL, pick_local_voice
             voice = pick_local_voice(tgt_lang, gender)
             base = _LOCAL.get(voice, ("", "", 0))[2]
-            if cfg.tts_pitch_follow and base and pitch_hz:
-                pass
         else:
+            from ..tts.engine import VOICE_BASE_F0, pick_voice
             voice = cfg.tts_voice_zh if tgt_lang.startswith("zh") else cfg.tts_voice_en
             if not voice:
                 voice = pick_voice(tgt_lang, gender)
+            base = VOICE_BASE_F0.get(voice, 0)
+
+        # 音高贴合：先按「基准 f0 → 原说话人 f0」给个粗略偏移
+        pitch_hz = 0
+        if cfg.keep_voice and cfg.tts_pitch_follow and src_f0 > 0 and base:
+            pitch_hz = max(-50, min(50, int(round(src_f0 - base))))
+
         res.voice = voice
-        if hasattr(tts, "synthesize"):
+        if not hasattr(tts, "synthesize"):
+            return np.zeros(0, np.float32), 24000
+        try:
+            pcm, sr = tts.synthesize(res.tgt_text, voice=voice, pitch_hz=pitch_hz)
+        except TypeError:
+            pcm, sr = tts.synthesize(res.tgt_text, voice)
+
+        # 音色还原：把配音的音高/共振峰与频谱包络往原说话人拉（纯 numpy，信号层近似）
+        strength = float(getattr(cfg, "voice_match", 0.0) or 0.0)
+        if cfg.keep_voice and strength > 0 and getattr(pcm, "size", 0):
             try:
-                return tts.synthesize(res.tgt_text, voice=voice, pitch_hz=pitch_hz)
-            except TypeError:
-                return tts.synthesize(res.tgt_text, voice)
-        return np.zeros(0, np.float32), 24000
+                ref = self._timbre.update(src_audio, 16000)
+                if ref is not None:
+                    pcm = match_timbre(pcm, int(sr), ref, strength=strength)
+            except Exception as e:            # 音色匹配失败不影响正常配音
+                res.error = (res.error + f" | timbre: {e}").strip(" |")
+        return pcm, sr
 
     @staticmethod
     def _norm(text: str) -> str:

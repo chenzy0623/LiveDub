@@ -681,7 +681,21 @@ class MainWindow(QMainWindow):
         self.cmb_rate = QComboBox()
         for val in ("-20%", "-10%", "+0%", "+10%", "+20%", "+30%"):
             self.cmb_rate.addItem(val, val)
-        g.body.addWidget(self._field("语速", self.cmb_rate, width=86))
+        self.sp_match = QSpinBox()
+        self.sp_match.setRange(0, 100)
+        self.sp_match.setSingleStep(10)
+        self.sp_match.setSuffix("%")
+        self.sp_match.setToolTip(
+            "把配音的嗓音往原说话人靠：0 = 关闭（用音色表里的原声）；\n"
+            "70% = 推荐；100% = 尽量贴近（过度会有点闷）。\n"
+            "做法是变调 + 频谱包络匹配，属于信号层近似，不是 1:1 克隆。")
+        pair = QWidget()
+        ph = QHBoxLayout(pair)
+        ph.setContentsMargins(0, 0, 0, 0)
+        ph.setSpacing(10)
+        ph.addWidget(self._field("语速", self.cmb_rate, width=52), 1)
+        ph.addWidget(self._field("音色还原", self.sp_match, width=62), 1)
+        g.body.addWidget(pair)
 
         btn_voices = QPushButton("从网络刷新音色列表")
         btn_voices.setObjectName("ghost")
@@ -805,7 +819,7 @@ class MainWindow(QMainWindow):
         rw.setFixedWidth(380)
         rl = QVBoxLayout(rw)
         rl.setContentsMargins(0, 0, 0, 0)
-        rl.setSpacing(10)
+        rl.setSpacing(8)
 
         tips = SectionCard("小提示")
         tips.body.setSpacing(8)
@@ -825,9 +839,9 @@ class MainWindow(QMainWindow):
         vb = QLabel(
             "<p style='margin:0; line-height:165%'>"
             "本机没有 NVIDIA 显卡，跑不动「声音克隆」模型，因此采用"
-            "<span style='color:#e9edf6'>音高 + 性别匹配</span>：识别原说话人是男声还是"
-            "女声、音高多少，再挑最接近的配音并做音高偏移，听起来像同一个人。"
-            "如需 1:1 克隆，可在设置里接云服务（如 ElevenLabs / MiniMax）。</p>")
+            "<span style='color:#e9edf6'>音高 + 性别 + 频谱包络匹配</span>：识别音高、性别、"
+            "共鸣明暗，再把配音往这些特征上拉（「音色还原」0–100%，默认 70%）。"
+            "这是信号层近似，不是 1:1 克隆；要 1:1 请接云服务。</p>")
         vb.setObjectName("help")
         vb.setTextFormat(Qt.RichText)
         vb.setWordWrap(True)
@@ -1020,6 +1034,7 @@ class MainWindow(QMainWindow):
         # 设置页
         i = self.cmb_mt.findData(c.mt_engine)
         self.cmb_mt.setCurrentIndex(max(0, i))
+        self.sp_match.setValue(int(round(float(getattr(c, 'voice_match', 0.7)) * 100)))
         i = self.cmb_tts.findData(c.tts_engine)
         self.cmb_tts.setCurrentIndex(max(0, i))
         self.chk_offline.setChecked(bool(getattr(c, "offline_only", False)))
@@ -1059,6 +1074,7 @@ class MainWindow(QMainWindow):
         c.outbound_enabled = self.chk_outbound.isChecked()
         c.mt_engine = self.cmb_mt.currentData() or "bing"
         c.tts_engine = self.cmb_tts.currentData() or "edge"
+        c.voice_match = float(self.sp_match.value()) / 100.0
         c.offline_only = self.chk_offline.isChecked()
         c.deepseek_api_key = self.ed_key.text().strip()
         c.mt_context = int(self.sp_ctx.value())
