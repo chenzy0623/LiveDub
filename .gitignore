@@ -26,3 +26,6 @@ dist/
 models/mt/
 models/tts/
 tools/piper/
+
+# 本机音色演示音频（体积大、不入库）
+demo/
